@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Organische Territorien</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #1a1a2e, #16213e, #0f3460);
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+            color: white;
+        }
+
+        #gameContainer {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        canvas {
+            border: none;
+            background: radial-gradient(circle at center, rgba(15,52,96,0.3), rgba(26,26,46,0.8));
+        }
+
+        .controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            background: rgba(255,255,255,0.1);
+            border: 2px solid rgba(255,255,255,0.3);
+            color: white;
+            padding: 12px 20px;
+            border-radius: 25px;
+            cursor: pointer;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .btn:hover {
+            background: rgba(255,255,255,0.2);
+            border-color: rgba(255,255,255,0.5);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+
+        .btn.active {
+            background: rgba(100,255,100,0.3);
+            border-color: rgba(100,255,100,0.6);
+        }
+
+        .info {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.6);
+            padding: 15px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+
+        .species-info {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0,0,0,0.6);
+            padding: 20px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+            max-width: 300px;
+        }
+
+        .species-item {
+            display: flex;
+            align-items: center;
+            margin: 8px 0;
+            padding: 8px;
+            border-radius: 8px;
+            background: rgba(255,255,255,0.05);
+        }
+
+        .species-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            margin-right: 10px;
+            border: 2px solid rgba(255,255,255,0.3);
+        }
+
+        .species-bar {
+            flex: 1;
+            height: 8px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 4px;
+            margin-left: 10px;
+            overflow: hidden;
+        }
+
+        .species-progress {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
+        }
+
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+
+        .title {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 3em;
+            font-weight: bold;
+            text-align: center;
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4, #45b7d1, #96ceb4);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            opacity: 0;
+            transition: opacity 1s ease;
+            pointer-events: none;
+        }
+
+        .title.show {
+            opacity: 1;
+        }
+
+        .fade-out {
+            opacity: 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div class="title" id="title">Organische Territorien</div>
+        
+        <div class="controls">
+            <button class="btn" id="startBtn">🌱 Start</button>
+            <button class="btn" id="pauseBtn">⏸️ Pause</button>
+            <button class="btn" id="resetBtn">🔄 Neustart</button>
+            <button class="btn" id="soundBtn">🔊 Sound</button>
+            <button class="btn" id="speedBtn">⚡ Normal</button>
+        </div>
+
+        <div class="info">
+            <div><strong>Lebensformen:</strong> <span id="speciesCount">0</span></div>
+            <div><strong>Zyklen:</strong> <span id="cycles">0</span></div>
+            <div><strong>Besiedlung:</strong> <span id="coverage">0%</span></div>
+        </div>
+
+        <div class="species-info">
+            <h3 style="margin-top: 0;">Territorien</h3>
+            <div id="speciesList"></div>
+        </div>
+
+        <canvas id="gameCanvas"></canvas>
+    </div>
+
+    <script>
+        class OrganicTerritories {
+            constructor() {
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.canvas.width = window.innerWidth;
+                this.canvas.height = window.innerHeight;
+                
+                this.running = false;
+                this.soundEnabled = true;
+                this.speed = 1;
+                this.speedSettings = [0.5, 1, 2, 4];
+                this.speedIndex = 1;
+                
+                this.gridSize = 4;
+                this.cols = Math.floor(this.canvas.width / this.gridSize);
+                this.rows = Math.floor(this.canvas.height / this.gridSize);
+                
+                this.grid = [];
+                this.species = [];
+                this.maxSpecies = 8;
+                this.cycles = 0;
+                this.lastUpdate = 0;
+                this.updateInterval = 100;
+                
+                this.colors = [
+                    { r: 255, g: 107, b: 107 }, // Koralle
+                    { r: 78, g: 205, b: 196 },  // Türkis
+                    { r: 255, g: 206, b: 84 },  // Gold
+                    { r: 150, g: 206, b: 180 }, // Mint
+                    { r: 160, g: 157, b: 255 }, // Lila
+                    { r: 255, g: 154, b: 162 }, // Rosa
+                    { r: 119, g: 221, b: 119 }, // Grün
+                    { r: 255, g: 183, b: 77 }   // Orange
+                ];
+                
+                this.initGrid();
+                this.bindEvents();
+                this.showTitle();
+            }
+            
+            showTitle() {
+                const title = document.getElementById('title');
+                title.classList.add('show');
+                setTimeout(() => {
+                    title.classList.add('fade-out');
+                }, 2000);
+            }
+            
+            initGrid() {
+                this.grid = [];
+                for (let x = 0; x < this.cols; x++) {
+                    this.grid[x] = [];
+                    for (let y = 0; y < this.rows; y++) {
+                        this.grid[x][y] = { species: -1, strength: 0, age: 0 };
+                    }
+                }
+            }
+            
+            createSpecies() {
+                this.species = [];
+                const numSpecies = Math.floor(Math.random() * 4) + 4; // 4-7 Arten
+                
+                for (let i = 0; i < numSpecies; i++) {
+                    const x = Math.floor(Math.random() * this.cols);
+                    const y = Math.floor(Math.random() * this.rows);
+                    
+                    const species = {
+                        id: i,
+                        color: this.colors[i],
+                        expansionRate: Math.random() * 0.3 + 0.1,
+                        resilience: Math.random() * 0.5 + 0.3,
+                        territory: 1,
+                        name: this.generateSpeciesName()
+                    };
+                    
+                    this.species.push(species);
+                    this.grid[x][y] = { species: i, strength: 1, age: 0 };
+                }
+                
+                this.updateSpeciesDisplay();
+            }
+            
+            generateSpeciesName() {
+                const prefixes = ['Aqu', 'Lum', 'Viv', 'Ser', 'Mel', 'Cor', 'Syl', 'Nyx'];
+                const suffixes = ['aria', 'ensis', 'orum', 'antha', 'idae', 'osia', 'icum', 'ella'];
+                return prefixes[Math.floor(Math.random() * prefixes.length)] + 
+                       suffixes[Math.floor(Math.random() * suffixes.length)];
+            }
+            
+            update() {
+                if (!this.running) return;
+                
+                const now = Date.now();
+                if (now - this.lastUpdate < this.updateInterval / this.speed) return;
+                
+                this.lastUpdate = now;
+                this.cycles++;
+                
+                // Territorien erweitern
+                this.expandTerritories();
+                
+                // Zufällige Events
+                if (Math.random() < 0.02) {
+                    this.triggerRandomEvent();
+                }
+                
+                this.updateStats();
+                this.updateSpeciesDisplay();
+                
+                if (this.soundEnabled && Math.random() < 0.1) {
+                    this.playAmbientSound();
+                }
+            }
+            
+            expandTerritories() {
+                const newGrid = JSON.parse(JSON.stringify(this.grid));
+                
+                for (let x = 0; x < this.cols; x++) {
+                    for (let y = 0; y < this.rows; y++) {
+                        const cell = this.grid[x][y];
+                        if (cell.species >= 0) {
+                            cell.age++;
+                            this.tryExpand(x, y, newGrid);
+                        }
+                    }
+                }
+                
+                this.grid = newGrid;
+                this.updateTerritoryCount();
+            }
+            
+            tryExpand(x, y, newGrid) {
+                const cell = this.grid[x][y];
+                const species = this.species[cell.species];
+                
+                if (Math.random() > species.expansionRate) return;
+                
+                const neighbors = this.getNeighbors(x, y);
+                const target = neighbors[Math.floor(Math.random() * neighbors.length)];
+                
+                if (!target) return;
+                
+                const targetCell = this.grid[target.x][target.y];
+                
+                if (targetCell.species === -1) {
+                    // Leere Zelle besiedeln
+                    newGrid[target.x][target.y] = {
+                        species: cell.species,
+                        strength: Math.random() * 0.5 + 0.5,
+                        age: 0
+                    };
+                } else if (targetCell.species !== cell.species) {
+                    // Territorienkonflikt
+                    const attackStrength = cell.strength * species.resilience * (Math.random() * 0.5 + 0.5);
+                    const defendStrength = targetCell.strength * this.species[targetCell.species].resilience;
+                    
+                    if (attackStrength > defendStrength * 1.2) {
+                        newGrid[target.x][target.y] = {
+                            species: cell.species,
+                            strength: attackStrength * 0.7,
+                            age: 0
+                        };
+                    }
+                }
+            }
+            
+            getNeighbors(x, y) {
+                const neighbors = [];
+                for (let dx = -1; dx <= 1; dx++) {
+                    for (let dy = -1; dy <= 1; dy++) {
+                        if (dx === 0 && dy === 0) continue;
+                        const nx = x + dx;
+                        const ny = y + dy;
+                        if (nx >= 0 && nx < this.cols && ny >= 0 && ny < this.rows) {
+                            neighbors.push({ x: nx, y: ny });
+                        }
+                    }
+                }
+                return neighbors;
+            }
+            
+            triggerRandomEvent() {
+                const events = ['growth_boost', 'climate_change', 'new_resources'];
+                const event = events[Math.floor(Math.random() * events.length)];
+                
+                switch (event) {
+                    case 'growth_boost':
+                        const luckySpecies = Math.floor(Math.random() * this.species.length);
+                        this.species[luckySpecies].expansionRate *= 1.5;
+                        setTimeout(() => {
+                            this.species[luckySpecies].expansionRate /= 1.5;
+                        }, 5000);
+                        break;
+                        
+                    case 'climate_change':
+                        this.species.forEach(s => {
+                            s.resilience *= (Math.random() * 0.4 + 0.8);
+                        });
+                        break;
+                }
+            }
+            
+            updateTerritoryCount() {
+                this.species.forEach(s => s.territory = 0);
+                
+                for (let x = 0; x < this.cols; x++) {
+                    for (let y = 0; y < this.rows; y++) {
+                        const cell = this.grid[x][y];
+                        if (cell.species >= 0) {
+                            this.species[cell.species].territory++;
+                        }
+                    }
+                }
+            }
+            
+            render() {
+                // Hintergrund mit Farbverlauf
+                const gradient = this.ctx.createRadialGradient(
+                    this.canvas.width/2, this.canvas.height/2, 0,
+                    this.canvas.width/2, this.canvas.height/2, Math.max(this.canvas.width, this.canvas.height)
+                );
+                gradient.addColorStop(0, 'rgba(15,52,96,0.1)');
+                gradient.addColorStop(1, 'rgba(26,26,46,0.9)');
+                this.ctx.fillStyle = gradient;
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                // Territorien mit organischen Formen rendern
+                for (let x = 0; x < this.cols; x++) {
+                    for (let y = 0; y < this.rows; y++) {
+                        const cell = this.grid[x][y];
+                        if (cell.species >= 0) {
+                            this.renderOrganicCell(x, y, cell);
+                        }
+                    }
+                }
+                
+                // Glitzernde Partikel für belebte Bereiche
+                if (this.running) {
+                    this.renderParticles();
+                }
+            }
+            
+            renderOrganicCell(x, y, cell) {
+                const species = this.species[cell.species];
+                const centerX = x * this.gridSize + this.gridSize / 2;
+                const centerY = y * this.gridSize + this.gridSize / 2;
+                
+                // Pulsierender Effekt basierend auf Alter
+                const pulse = Math.sin(Date.now() * 0.003 + cell.age * 0.1) * 0.2 + 0.8;
+                const alpha = Math.min(cell.strength * pulse, 1);
+                
+                // Weiche, organische Kreise
+                const radius = this.gridSize * 0.6 * pulse;
+                
+                // Äußerer Glow
+                const glowGradient = this.ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius * 2);
+                glowGradient.addColorStop(0, `rgba(${species.color.r}, ${species.color.g}, ${species.color.b}, ${alpha * 0.8})`);
+                glowGradient.addColorStop(0.7, `rgba(${species.color.r}, ${species.color.g}, ${species.color.b}, ${alpha * 0.3})`);
+                glowGradient.addColorStop(1, `rgba(${species.color.r}, ${species.color.g}, ${species.color.b}, 0)`);
+                
+                this.ctx.fillStyle = glowGradient;
+                this.ctx.fillRect(centerX - radius * 2, centerY - radius * 2, radius * 4, radius * 4);
+                
+                // Hauptkörper
+                const mainGradient = this.ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius);
+                mainGradient.addColorStop(0, `rgba(${species.color.r}, ${species.color.g}, ${species.color.b}, ${alpha})`);
+                mainGradient.addColorStop(0.8, `rgba(${species.color.r}, ${species.color.g}, ${species.color.b}, ${alpha * 0.7})`);
+                mainGradient.addColorStop(1, `rgba(${species.color.r}, ${species.color.g}, ${species.color.b}, ${alpha * 0.2})`);
+                
+                this.ctx.beginPath();
+                this.ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+                this.ctx.fillStyle = mainGradient;
+                this.ctx.fill();
+            }
+            
+            renderParticles() {
+                const time = Date.now() * 0.001;
+                for (let i = 0; i < 20; i++) {
+                    const x = (Math.sin(time + i) * this.canvas.width / 4) + this.canvas.width / 2;
+                    const y = (Math.cos(time * 0.7 + i * 0.5) * this.canvas.height / 4) + this.canvas.height / 2;
+                    const alpha = Math.sin(time * 2 + i) * 0.3 + 0.7;
+                    
+                    this.ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.1})`;
+                    this.ctx.beginPath();
+                    this.ctx.arc(x, y, 1, 0, Math.PI * 2);
+                    this.ctx.fill();
+                }
+            }
+            
+            updateStats() {
+                document.getElementById('speciesCount').textContent = this.species.filter(s => s.territory > 0).length;
+                document.getElementById('cycles').textContent = this.cycles;
+                
+                const totalCells = this.cols * this.rows;
+                const occupiedCells = this.species.reduce((sum, s) => sum + s.territory, 0);
+                const coverage = Math.round((occupiedCells / totalCells) * 100);
+                document.getElementById('coverage').textContent = coverage + '%';
+            }
+            
+            updateSpeciesDisplay() {
+                const list = document.getElementById('speciesList');
+                list.innerHTML = '';
+                
+                const totalTerritory = this.species.reduce((sum, s) => sum + s.territory, 0);
+                
+                this.species
+                    .filter(s => s.territory > 0)
+                    .sort((a, b) => b.territory - a.territory)
+                    .forEach(species => {
+                        const item = document.createElement('div');
+                        item.className = 'species-item';
+                        
+                        const percentage = totalTerritory > 0 ? (species.territory / totalTerritory) * 100 : 0;
+                        
+                        item.innerHTML = `
+                            <div class="species-color" style="background: rgb(${species.color.r}, ${species.color.g}, ${species.color.b})"></div>
+                            <span>${species.name}</span>
+                            <div class="species-bar">
+                                <div class="species-progress" style="width: ${percentage}%; background: rgb(${species.color.r}, ${species.color.g}, ${species.color.b})"></div>
+                            </div>
+                        `;
+                        
+                        list.appendChild(item);
+                    });
+            }
+            
+            playAmbientSound() {
+                if (!this.soundEnabled) return;
+                
+                // Einfache Web Audio API Töne
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+                
+                oscillator.frequency.setValueAtTime(200 + Math.random() * 400, audioContext.currentTime);
+                oscillator.type = 'sine';
+                
+                gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+                gainNode.gain.linearRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 1);
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 1);
+            }
+            
+            start() {
+                this.running = true;
+                this.createSpecies();
+                document.getElementById('startBtn').classList.add('active');
+                document.getElementById('pauseBtn').classList.remove('active');
+            }
+            
+            pause() {
+                this.running = false;
+                document.getElementById('startBtn').classList.remove('active');
+                document.getElementById('pauseBtn').classList.add('active');
+            }
+            
+            reset() {
+                this.running = false;
+                this.cycles = 0;
+                this.initGrid();
+                this.species = [];
+                document.getElementById('startBtn').classList.remove('active');
+                document.getElementById('pauseBtn').classList.remove('active');
+                this.updateStats();
+                this.updateSpeciesDisplay();
+                this.render();
+            }
+            
+            toggleSound() {
+                this.soundEnabled = !this.soundEnabled;
+                const btn = document.getElementById('soundBtn');
+                btn.textContent = this.soundEnabled ? '🔊 Sound' : '🔇 Stumm';
+                btn.classList.toggle('active', this.soundEnabled);
+            }
+            
+            changeSpeed() {
+                this.speedIndex = (this.speedIndex + 1) % this.speedSettings.length;
+                this.speed = this.speedSettings[this.speedIndex];
+                const speedNames = ['Langsam', 'Normal', 'Schnell', 'Turbo'];
+                document.getElementById('speedBtn').textContent = `⚡ ${speedNames[this.speedIndex]}`;
+            }
+            
+            bindEvents() {
+                document.getElementById('startBtn').addEventListener('click', () => this.start());
+                document.getElementById('pauseBtn').addEventListener('click', () => this.pause());
+                document.getElementById('resetBtn').addEventListener('click', () => this.reset());
+                document.getElementById('soundBtn').addEventListener('click', () => this.toggleSound());
+                document.getElementById('speedBtn').addEventListener('click', () => this.changeSpeed());
+                
+                window.addEventListener('resize', () => {
+                    this.canvas.width = window.innerWidth;
+                    this.canvas.height = window.innerHeight;
+                    this.cols = Math.floor(this.canvas.width / this.gridSize);
+                    this.rows = Math.floor(this.canvas.height / this.gridSize);
+                    this.reset();
+                });
+                
+                // Keyboard shortcuts
+                document.addEventListener('keydown', (e) => {
+                    switch(e.key.toLowerCase()) {
+                        case ' ':
+                            e.preventDefault();
+                            this.running ? this.pause() : this.start();
+                            break;
+                        case 'r':
+                            this.reset();
+                            break;
+                        case 's':
+                            this.toggleSound();
+                            break;
+                    }
+                });
+            }
+            
+            gameLoop() {
+                this.update();
+                this.render();
+                requestAnimationFrame(() => this.gameLoop());
+            }
+        }
+        
+        // Spiel starten
+        const game = new OrganicTerritories();
+        game.gameLoop();
+        
+        // Initial render
+        game.render();
+    </script>
+</body>
+</html>
